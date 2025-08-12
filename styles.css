@@ -1,0 +1,63 @@
+/* Basic polish */
+.nowrap-scroll table td, 
+.nowrap-scroll table th {
+  white-space: nowrap;
+}
+
+.tags-input {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  padding: .375rem .5rem;
+  border: 1px solid var(--bs-border-color);
+  border-radius: .375rem;
+  background: #fff;
+}
+.tags-input .tag {
+  background: var(--bs-primary-bg-subtle);
+  color: var(--bs-primary-text);
+  border: 1px solid var(--bs-primary-border-subtle);
+  padding: .15rem .5rem;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: .25rem;
+  font-size: .9rem;
+}
+.tags-input .tag button {
+  border: none;
+  background: transparent;
+  padding: 0;
+  line-height: 1;
+}
+.tags-input .tag-input {
+  border: none;
+  outline: none;
+  flex: 1;
+  min-width: 10ch;
+}
+
+.stat-card {
+  border: 1px solid var(--bs-border-color);
+  border-radius: .5rem;
+  padding: 1rem;
+  background: #fff;
+}
+.stat-card .label {
+  font-size: .9rem;
+  color: #6c757d;
+}
+.stat-card .value {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+/* Smaller monospace preview */
+#waPreview {
+  font-size: .95rem;
+}
+
+/* Mobile spacing */
+@media (max-width: 576px) {
+  .navbar-brand { font-size: 1rem; }
+}
