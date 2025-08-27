@@ -746,44 +746,80 @@ function renderMatrixGrid(year, monthOrNull, plans, reports){
   });
 }
 
-async function refreshMatrix(){
-  const mode  = DOM.mxMode.value;
-  const year  = Number(DOM.mxYear.value || new Date().getFullYear());
-  const month = (mode === 'month') ? Number(DOM.mxMonth.value || new Date().getMonth()) : null;
+async function refreshMatrix() {
+  const mode  = DOM.mxMode?.value || 'year';
+  const now   = new Date();
+  const year  = Number(DOM.mxYear?.value || now.getFullYear());
+  const month = (mode === 'month')
+    ? Number(DOM.mxMonth?.value ?? now.getMonth())
+    : null;
 
+  // Info mode
   DOM.mxInfo.textContent = MX_ADMIN ? 'Mode admin (server: Google Sheet).' : 'Mode lokal.';
+
+  // --- Ambil data sekali saja ---
+  let plans = [];
+  let reports = [];
   try {
-    const data = await loadMatrixData(); // satu kali (hindari double fetch)
-    renderMatrixGrid(year, month, data.plans||[], data.reports||[]);
-    if (MX_ADMIN){
-      renderKPIAdmin(data.plans||[], data.reports||[], year, month);
-      DOM.mxKPI.classList.remove('d-none');
-    } else {
-      DOM.mxKPI.classList.add('d-none');
-    }
-  } catch (e){
-    console.error(e);
+    const data = await loadMatrixData();
+    plans   = Array.isArray(data?.plans)   ? data.plans   : [];
+    reports = Array.isArray(data?.reports) ? data.reports : [];
+
+    // Render kalender matrik
+    renderMatrixGrid(year, month, plans, reports);
+  } catch (e) {
+    console.error('[matrix] load/render error:', e);
     showAlert('Gagal memuat data matrik.', 'danger');
-    DOM.mxKPI.classList.add('d-none');
+    DOM.mxKPI?.classList.add('d-none');
+    return; // hentikan di sini supaya tidak lanjut hitung KPI
+  }
+
+  // --- KPI hanya saat Admin; jangan ganggu matrik jika KPI error ---
+  if (MX_ADMIN) {
+    try {
+      renderKPIAdmin(plans, reports, year, month);
+      DOM.mxKPI?.classList.remove('d-none');
+    } catch (eKpi) {
+      console.warn('[matrix] KPI render skipped:', eKpi);
+      DOM.mxKPI?.classList.add('d-none');
+    }
+  } else {
+    DOM.mxKPI?.classList.add('d-none');
   }
 }
 
+
 // Matching plan→actual untuk KPI
-function matchPlans(plans, reports, windowDays=14){
+function matchPlans(plans, reports, windowDays = 14){
   const norm = (s)=> String(s||'').trim().toUpperCase();
   const keyOf = (o)=> [norm(o.unit), norm(o.divisi), norm(o.region), norm(topikTwoWords(o.topik))].join('|');
-  const byKey = new Map();
-  reports.forEach(r=>{
-    const k = keyOf(r);
-    (byKey.get(k) || byKey.set(k, [])).push(r);
-  });
-  for (const arr of byKey.values()) arr.sort((a,b)=> (new Date(a.waktu)) - (new Date(b.waktu)));
 
-  let realized=0, ontime=0; const delays=[]; const pairs=[];
-  plans.forEach(p=>{
-    const arr = byKey.get(keyOf(p)) || [];
+  const byKey = new Map();
+
+  // --- FIX di sini: jangan pakai (get() || set()).push()
+  (Array.isArray(reports) ? reports : []).forEach(r=>{
+    const k = keyOf(r);
+    if (!byKey.has(k)) byKey.set(k, []);
+    byKey.get(k).push(r);
+  });
+
+  // sort setiap bucket (jaga-jaga hanya jika array)
+  for (const arr of byKey.values()) {
+    if (Array.isArray(arr)) {
+      arr.sort((a,b)=> (new Date(a.waktu)) - (new Date(b.waktu)));
+    }
+  }
+
+  const pairs = [];
+  let realized = 0, ontime = 0;
+  const delays = [];
+
+  (Array.isArray(plans) ? plans : []).forEach(p=>{
+    const k = keyOf(p);
+    const arr = byKey.get(k) || [];
     const pDate = new Date(p.waktu);
-    let best=null, bestDelta=Infinity, bestIdx=-1;
+
+    let best = null, bestDelta = Infinity, bestIdx = -1;
     arr.forEach((a, idx)=>{
       const d = new Date(a.waktu);
       const delta = Math.round((d - pDate)/(1000*60*60*24));
@@ -791,20 +827,34 @@ function matchPlans(plans, reports, windowDays=14){
         best = a; bestDelta = delta; bestIdx = idx;
       }
     });
+
     if (best){
-      realized++; delays.push(bestDelta); if (bestDelta===0) ontime++; arr.splice(bestIdx,1);
+      realized++;
+      delays.push(bestDelta);
+      if (bestDelta === 0) ontime++;
+      arr.splice(bestIdx,1);   // agar tidak dipakai ganda
     }
     pairs.push({ plan:p, actual:best, delayDays: best? bestDelta : null });
   });
 
+  // median delay
   let median = 0;
   if (delays.length){
-    delays.sort((a,b)=> a-b);
+    delays.sort((a,b)=>a-b);
     const mid = Math.floor(delays.length/2);
     median = delays.length%2 ? delays[mid] : Math.round((delays[mid-1]+delays[mid])/2);
   }
-  return { pairs, realizedCount:realized, ontimeCount:ontime, totalPlans:plans.length, medianDelay:median };
+
+  return {
+    pairs,
+    realizedCount: realized,
+    ontimeCount: ontime,
+    totalPlans: (Array.isArray(plans)? plans.length : 0),
+    medianDelay: median
+  };
 }
+
+
 function renderKPIAdmin(plans, reports, year, monthOrNull){
   const inPeriod = (iso)=>{
     const d = new Date(iso);
@@ -1011,24 +1061,29 @@ DOM.btnClearStat.addEventListener('click', ()=>{
 /* -----------------------------
  * 14) NAVIGASI & PREFILL
  * ---------------------------*/
-function prefillDefaults(){
+function prefillDefaults() {
   const p = getPrefs();
-  // Beranda
-  if (p.askep)  DOM.askep.value  = p.askep;
-  if (p.divisi) DOM.divisi.value = p.divisi;
-  if (p.unit)   DOM.unit.value   = p.unit;
-  if (p.region) DOM.region.value = p.region;
-  // Rencana
-  if (p.askep)  DOM.rencAskep.value  = p.askep;
-  if (p.divisi) DOM.rencDivisi.value = p.divisi;
-  if (p.unit)   DOM.rencUnit.value   = p.unit;
-  if (p.region) DOM.rencRegion.value = p.region;
-  // Prefs page
-  DOM.prefAskep.value  = p.askep  || '';
-  DOM.prefDivisi.value = p.divisi || '';
-  DOM.prefUnit.value   = p.unit   || '';
-  DOM.prefRegion.value = p.region || '';
-  refreshMandorDatalists();
+
+  // Form Aktual
+  if (DOM.askep && p.askep)    DOM.askep.value  = p.askep;
+  if (DOM.divisi && p.divisi)  DOM.divisi.value = p.divisi;
+  if (DOM.unit && p.unit)      DOM.unit.value   = p.unit;
+  if (DOM.region && p.region)  DOM.region.value = p.region;
+
+  // Form Rencana
+  if (DOM.rencAskep && p.askep && !DOM.rencAskep.value)    DOM.rencAskep.value  = p.askep;
+  if (DOM.rencDivisi && p.divisi && !DOM.rencDivisi.value) DOM.rencDivisi.value = p.divisi;
+  if (DOM.rencUnit && p.unit && !DOM.rencUnit.value)       DOM.rencUnit.value   = p.unit;
+  if (DOM.rencRegion && p.region && !DOM.rencRegion.value) DOM.rencRegion.value = p.region;
+
+  // Tab Pengaturan
+  if (DOM.prefAskep)  DOM.prefAskep.value  = p.askep  || '';
+  if (DOM.prefDivisi) DOM.prefDivisi.value = p.divisi || '';
+  if (DOM.prefUnit)   DOM.prefUnit.value   = p.unit   || '';
+  if (DOM.prefRegion) DOM.prefRegion.value = p.region || '';
+
+  // Saran mandor
+  refreshMandorDatalists && refreshMandorDatalists();
 }
 ['unit','divisi'].forEach(id=> document.getElementById(id).addEventListener('input', refreshMandorDatalists));
 
@@ -1318,14 +1373,27 @@ DOM.mxMonth.addEventListener('change', refreshMatrix);
 DOM.btnMxRefresh.addEventListener('click', refreshMatrix);
 
 // Prefs page
-DOM.btnSimpanPrefs.addEventListener('click', ()=>{
-  const p = getPrefs();
-  p.askep  = DOM.prefAskep.value.trim();
-  p.divisi = DOM.prefDivisi.value.trim();
-  p.unit   = DOM.prefUnit.value.trim();
-  p.region = DOM.prefRegion.value.trim();
-  setPrefs(p);
-  showAlert('Pengaturan tersimpan.', 'success');
+if (DOM.btnSimpanPrefs) {
+  DOM.btnSimpanPrefs.addEventListener('click', ()=>{
+    const p = getPrefs();
+    p.askep  = DOM.prefAskep.value.trim();
+    p.divisi = DOM.prefDivisi.value.trim();
+    p.unit   = DOM.prefUnit.value.trim();
+    p.region = DOM.prefRegion.value.trim();
+    setPrefs(p);
+    showAlert('Pengaturan tersimpan.', 'success');
+    prefillDefaults();
+  });
+} else {
+  console.warn('#btnSimpanPrefs tidak ditemukan di DOM');
+}
+
+// --- Tambahkan juga handler Reset Form (Aktual) biar nggak error saat null) ---
+DOM.btnClearForm?.addEventListener('click', ()=>{
+  DOM.form.reset();
+  penanyaTags.clear();
+  perangkumTags.clear();
+  initToday();
   prefillDefaults();
 });
 
@@ -1353,8 +1421,16 @@ function maybeAutoSyncOnStartup(){
   }
 }
 
+function ensurePrefEls() {
+  if (!DOM.prefAskep)  DOM.prefAskep  = document.getElementById('prefAskep');
+  if (!DOM.prefDivisi) DOM.prefDivisi = document.getElementById('prefDivisi');
+  if (!DOM.prefUnit)   DOM.prefUnit   = document.getElementById('prefUnit');
+  if (!DOM.prefRegion) DOM.prefRegion = document.getElementById('prefRegion');
+}
+
 // Init
 function init(){
+  ensurePrefEls();
   prefillDefaults();
   initToday();
   storageSizeLabel();
@@ -1363,4 +1439,4 @@ function init(){
   showView('home');
   maybeAutoSyncOnStartup();
 }
-init();
+document.addEventListener('DOMContentLoaded', init);

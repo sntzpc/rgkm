@@ -90,7 +90,7 @@
 .mx-grid .mx-cal th,
 .mx-grid .mx-cal td {
   border: 1px solid var(--bs-border-color);
-  padding: .45rem .5rem;
+  padding-top: 28px;
   vertical-align: top;
   background: #fff;
 }
@@ -113,11 +113,19 @@
 }
 .mx-daynum {
   position: absolute;
-  top: 6px;
-  right: 8px;
+  top: 4px;
+  left: 6px;           /* pindah ke kiri supaya tidak 'nyangkut' di border kanan */
+  right: auto;
   font-weight: 700;
   font-size: .9rem;
-  color: #6c757d;
+  color: #495057;
+  background: #fff;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 999px;
+  padding: 2px 8px;
+  z-index: 3;
+  box-shadow: 0 1px 1px rgba(0,0,0,.04);
+  pointer-events: none;
 }
 
 /* Badge Rencana/Aktual */
