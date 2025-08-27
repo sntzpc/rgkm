@@ -3,6 +3,8 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <link rel="manifest" href="./manifest.json">
+  <meta name="theme-color" content="#0d6efd">
   <title>Aplikasi Laporan GKM</title>
 
   <!-- Bootstrap 5 -->
@@ -236,6 +238,26 @@
       </div>
     </div>
     <div class="card-body">
+      <div id="mxKPI" class="row g-3 d-none">
+  <div class="col-12 col-md-4">
+    <div class="stat-card">
+      <div class="label">On-time (tgl sama)</div>
+      <div class="value" id="kpiOnTime">0%</div>
+    </div>
+  </div>
+  <div class="col-12 col-md-4">
+    <div class="stat-card">
+      <div class="label">Median Delay</div>
+      <div class="value" id="kpiMedian">0 hari</div>
+    </div>
+  </div>
+  <div class="col-12 col-md-4">
+    <div class="stat-card">
+      <div class="label">Realisasi Rencana</div>
+      <div class="value" id="kpiRealized">0%</div>
+    </div>
+  </div>
+</div>
       <div id="mxInfo" class="small text-muted mb-2">Mode lokal.</div>
       <div id="mxWrap" class="mx-grid"></div>
     </div>
@@ -380,6 +402,19 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <!-- jsPDF untuk export PDF -->
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <!-- jsPDF AutoTable untuk export PDF rapi -->
+  <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+  <script>
+  // Register SW setelah halaman selesai dimuat
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker
+        .register('./sw.js', { scope: './' })  // pakai path relatif ke index.html
+        .then(reg => console.log('SW registered', reg.scope))
+        .catch(err => console.warn('SW register failed', err));
+    });
+  }
+</script>
   <!-- App JS -->
   <script src="app.js"></script>
 </body>

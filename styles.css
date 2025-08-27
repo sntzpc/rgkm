@@ -1,9 +1,15 @@
-/* Basic polish */
-.nowrap-scroll table td, 
+/* =========================================================
+   GKM Reporter – styles.css
+   Cocok untuk index.html & app.js versi terakhir
+   ========================================================= */
+
+/* ---------- Utility ---------- */
+.nowrap-scroll table td,
 .nowrap-scroll table th {
   white-space: nowrap;
 }
 
+/* ---------- Tags (Mandor chips) ---------- */
 .tags-input {
   display: flex;
   flex-wrap: wrap;
@@ -12,6 +18,12 @@
   border: 1px solid var(--bs-border-color);
   border-radius: .375rem;
   background: #fff;
+  cursor: text;
+  min-height: 42px;
+}
+.tags-input:focus-within {
+  outline: 2px solid rgba(13,110,253,.25);
+  outline-offset: 2px;
 }
 .tags-input .tag {
   background: var(--bs-primary-bg-subtle);
@@ -29,14 +41,19 @@
   background: transparent;
   padding: 0;
   line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
 }
 .tags-input .tag-input {
   border: none;
   outline: none;
   flex: 1;
   min-width: 10ch;
+  background: transparent;
 }
 
+/* ---------- Stats & KPI Cards ---------- */
 .stat-card {
   border: 1px solid var(--bs-border-color);
   border-radius: .5rem;
@@ -52,39 +69,58 @@
   font-weight: 700;
 }
 
-/* Smaller monospace preview */
+/* ---------- Modal WA ---------- */
 #waPreview {
   font-size: .95rem;
 }
 
-/* Mobile spacing */
-@media (max-width: 576px) {
-  .navbar-brand { font-size: 1rem; }
-}
-
-/* ===== Matrik Grid ===== */
+/* ---------- Matrik (Kalender Minggu–Sabtu) ---------- */
 .mx-grid {
   overflow: auto;
+}
+.mx-month {               /* container per bulan */
+  margin-bottom: 1rem;
 }
 .mx-grid table {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
+  table-layout: fixed;
 }
-.mx-grid th, .mx-grid td {
+.mx-grid .mx-cal th,
+.mx-grid .mx-cal td {
   border: 1px solid var(--bs-border-color);
   padding: .45rem .5rem;
   vertical-align: top;
   background: #fff;
-  white-space: nowrap;
 }
-.mx-month {
-  margin-bottom: 1rem;
+.mx-grid .mx-cal th {
+  text-align: center;
+  background: var(--bs-light);
+  position: sticky;
+  top: 0;
+  z-index: 2;
 }
 .mx-cell {
-  min-width: 180px;
-  min-height: 72px;
+  position: relative;
+  min-width: 180px;     /* desktop default */
+  min-height: 110px;    /* lebih tinggi agar badge muat */
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
 }
+.mx-empty {
+  background: #f8f9fa !important;
+}
+.mx-daynum {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  font-weight: 700;
+  font-size: .9rem;
+  color: #6c757d;
+}
+
+/* Badge Rencana/Aktual */
 .mx-badge {
   display: block;
   border-radius: .4rem;
@@ -94,8 +130,37 @@
   font-size: .78rem;
   line-height: 1.2;
   cursor: pointer;
+  transition: transform .06s ease, box-shadow .12s ease;
+}
+.mx-badge:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 .1rem .25rem rgba(0,0,0,.05);
 }
 .mx-rencana { background: #ffe3ef; color: #a4004b; border-color: #f4a6c3; } /* pink */
 .mx-aktual  { background: #e7f7ea; color: #116a2f; border-color: #a9e0b8; } /* hijau */
+/* ketika pada tanggal sama (rencana + aktual) */
 .mx-both    { background: #e6efff; color: #063e9b; border-color: #aac3ff; } /* biru */
-.mx-sep     { font-weight: 700; color: #6c757d; margin:.25rem 0; }
+.mx-sep     { font-weight: 700; color: #6c757d; margin:.25rem 0; text-align:center; }
+
+/* ---------- Responsif ---------- */
+@media (max-width: 992px) {
+  .mx-cell { min-width: 160px; }
+}
+@media (max-width: 768px) {
+  .mx-cell { min-width: 140px; min-height: 96px; }
+  .mx-badge { font-size: .76rem; }
+}
+@media (max-width: 576px) {
+  .navbar-brand { font-size: 1rem; }
+  .mx-cell { min-width: 120px; min-height: 90px; }
+}
+
+/* ---------- Print-friendly (opsional untuk cetak langsung halaman) ---------- */
+@media print {
+  nav, footer, .btn, .pagination, .form-select, .form-control,
+  #mxKPI .stat-card { display: none !important; }
+  body { background: #fff; }
+  .mx-grid .mx-cal th,
+  .mx-grid .mx-cal td { border-color: #999; }
+  .mx-cell { min-width: 120px; min-height: 90px; }
+}
