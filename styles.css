@@ -61,3 +61,41 @@
 @media (max-width: 576px) {
   .navbar-brand { font-size: 1rem; }
 }
+
+/* ===== Matrik Grid ===== */
+.mx-grid {
+  overflow: auto;
+}
+.mx-grid table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.mx-grid th, .mx-grid td {
+  border: 1px solid var(--bs-border-color);
+  padding: .45rem .5rem;
+  vertical-align: top;
+  background: #fff;
+  white-space: nowrap;
+}
+.mx-month {
+  margin-bottom: 1rem;
+}
+.mx-cell {
+  min-width: 180px;
+  min-height: 72px;
+}
+.mx-badge {
+  display: block;
+  border-radius: .4rem;
+  border: 1px dashed #999;
+  padding: .15rem .35rem;
+  margin-bottom: .25rem;
+  font-size: .78rem;
+  line-height: 1.2;
+  cursor: pointer;
+}
+.mx-rencana { background: #ffe3ef; color: #a4004b; border-color: #f4a6c3; } /* pink */
+.mx-aktual  { background: #e7f7ea; color: #116a2f; border-color: #a9e0b8; } /* hijau */
+.mx-both    { background: #e6efff; color: #063e9b; border-color: #aac3ff; } /* biru */
+.mx-sep     { font-weight: 700; color: #6c757d; margin:.25rem 0; }

@@ -7,22 +7,28 @@ const KEYS = {
   queue: 'gkm_queue',
   prefs: 'gkm_prefs',
   mandorIndex: 'gkm_mandor_index',
-  lastSync: 'gkm_last_sync'
+  lastSync: 'gkm_last_sync',
+  plans: 'gkm_plans',
+  planQueue: 'gkm_plan_queue'
 };
 
 // === Sync config (hardcoded) ===
 // TODO: isi SCRIPT_URL dengan URL Web App Apps Script Anda
 const SYNC = {
-  SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbx_7N-S1i7VJQXik-zuUS_tkydc94FizTAQqSMs41xce4Z1RLKMEYuXCTP2u-4Gd_w/exec',
-  SHEET_NAME: 'LaporanGKM'
+  SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbyAbcN3GEXVYsF0RjfiS1dGqtwHfEXOsdK5jVxWho3bBT0Y07hLlcADJlytrxp1rBo8/exec',
+  SHEET_NAME: 'LaporanGKM',
+  SHEET_PLAN: 'RencanaGKM'
 };
 
+let MX_ADMIN = false;
 
 const DOM = {
   navLinks: document.querySelectorAll('[data-nav]'),
   views: {
     home: document.getElementById('view-home'),
+    plan: document.getElementById('view-plan'),
     history: document.getElementById('view-history'),
+    matrix: document.getElementById('view-matrix'),
     stats: document.getElementById('view-stats'),
     sync: document.getElementById('view-sync'),
     settings: document.getElementById('view-settings')
@@ -50,6 +56,18 @@ const DOM = {
   btnClearForm: document.getElementById('btnClearForm'),
   spinSave: document.getElementById('spinSave'),
 
+   // Rencana
+  formRencana: document.getElementById('formRencana'),
+  rencAskep: document.getElementById('rencAskep'),
+  rencDivisi: document.getElementById('rencDivisi'),
+  rencUnit: document.getElementById('rencUnit'),
+  rencRegion: document.getElementById('rencRegion'),
+  rencTanggal: document.getElementById('rencTanggal'),
+  rencTopik: document.getElementById('rencTopik'),
+  btnSimpanRencana: document.getElementById('btnSimpanRencana'),
+  btnClearRencana: document.getElementById('btnClearRencana'),
+  spinSaveRencana: document.getElementById('spinSaveRencana'),
+
   // Modal WA
   waTanggal: document.getElementById('waTanggal'),
   waPreview: document.getElementById('waPreview'),
@@ -62,6 +80,17 @@ const DOM = {
   historyPager: document.getElementById('historyPager'),
   historySearch: document.getElementById('historySearch'),
   pageSize: document.getElementById('pageSize'),
+
+    // Matrik
+  mxMode: document.getElementById('mxMode'),
+  mxYear: document.getElementById('mxYear'),
+  mxMonth: document.getElementById('mxMonth'),
+  btnMxRefresh: document.getElementById('btnMxRefresh'),
+  btnMxXlsx: document.getElementById('btnMxXlsx'),
+  btnMxPdf: document.getElementById('btnMxPdf'),
+  btnMxAdmin: document.getElementById('btnMxAdmin'),
+  mxWrap: document.getElementById('mxWrap'),
+  mxInfo: document.getElementById('mxInfo'),
 
   // Stats
   statFrom: document.getElementById('statFrom'),
@@ -170,8 +199,447 @@ function dequeueMany(ids=[]) {
   setQueue(Array.from(q));
 }
 function updateQueueCount() {
-  DOM.syncQueueCount.textContent = String(getQueue().length);
+  const c1 = getQueue().length;
+  const c2 = getPlanQueue().length;
+  DOM.syncQueueCount.textContent = String(c1 + c2);
 }
+
+// ===== Rencana: data access =====
+function getPlans(){ return readJSON(KEYS.plans, []); }
+function setPlans(arr){ writeJSON(KEYS.plans, arr); }
+function getPlanQueue(){ return readJSON(KEYS.planQueue, []); }
+function setPlanQueue(q){ writeJSON(KEYS.planQueue, q); updateQueueCount(); }
+function enqueuePlan(id){
+  const q = new Set(getPlanQueue());
+  q.add(id); setPlanQueue(Array.from(q));
+}
+function dequeuePlansMany(ids=[]){
+  const q = new Set(getPlanQueue());
+  ids.forEach(id=> q.delete(id));
+  setPlanQueue(Array.from(q));
+}
+
+function buildPlanFromForm(){
+  return {
+    id: uuid(),
+    tsCreated: new Date().toISOString(),
+    askep: DOM.rencAskep.value.trim(),
+    divisi: DOM.rencDivisi.value.trim(),
+    unit: DOM.rencUnit.value.trim(),
+    region: DOM.rencRegion.value.trim(),
+    waktu: DOM.rencTanggal.value ? new Date(DOM.rencTanggal.value).toISOString() : '',
+    topik: DOM.rencTopik.value.trim()
+  };
+}
+function validatePlan(p){
+  const required = ['askep','divisi','unit','region','waktu','topik'];
+  for(const k of required){ if(!p[k]) return false; }
+  return true;
+}
+
+// ====== Event: Rencana ======
+DOM.formRencana.addEventListener('submit', (e)=>{
+  e.preventDefault();
+  const plan = buildPlanFromForm();
+  if(!validatePlan(plan)) return showAlert('Lengkapi field bertanda * pada Rencana.', 'warning');
+
+  // Ingat default (pakai prefs yang sama)
+  const prefs = getPrefs();
+  prefs.askep = plan.askep; prefs.divisi = plan.divisi; prefs.unit = plan.unit; prefs.region = plan.region;
+  setPrefs(prefs);
+
+  // Simpan
+  const arr = getPlans();
+  arr.unshift(plan); setPlans(arr); enqueuePlan(plan.id);
+
+  toggleSpinner(DOM.btnSimpanRencana, DOM.spinSaveRencana, true);
+  setTimeout(()=>{
+    toggleSpinner(DOM.btnSimpanRencana, DOM.spinSaveRencana, false);
+    showAlert('Rencana disimpan & masuk antrean sync.', 'success');
+    // Kosongkan Hari & Topik saja; lainnya tetap
+    DOM.rencTanggal.value = ''; DOM.rencTopik.value = '';
+    storageSizeLabel();
+  }, 250);
+});
+
+DOM.btnClearRencana.addEventListener('click', ()=>{
+  DOM.rencTanggal.value = ''; DOM.rencTopik.value = '';
+});
+
+
+function getPlansByIds(ids){
+  const map = new Map(getPlans().map(r=> [r.id, r]));
+  return ids.map(id=> map.get(id)).filter(Boolean);
+}
+function buildPlanPayloadArray(plans){
+  return plans.map(p=> ({
+    id: p.id, tsCreated: p.tsCreated,
+    askep: p.askep, divisi: p.divisi, unit: p.unit, region: p.region,
+    waktu: p.waktu, topik: p.topik
+  }));
+}
+async function syncPlansBatch(ids, scriptUrl, sheetName){
+  const plans = getPlansByIds(ids);
+  if(!plans.length) return true;
+  const payload = JSON.stringify(buildPlanPayloadArray(plans));
+  const fd = new FormData();
+  fd.append('payload', payload);
+  fd.append('sheetName', sheetName || SYNC.SHEET_PLAN);
+  await fetch(scriptUrl, { method:'POST', mode:'no-cors', body: fd });
+  return true;
+}
+
+// ========Matrik: render, admin, export=====
+
+function initialsFromName(fullname){
+  // dukung banyak nama dipisah koma / & ; ambil inisial tiap kata
+  const persons = String(fullname||'').split(/[,;&]/).map(s=> s.trim()).filter(Boolean);
+  const tags = persons.map(p=>{
+    const ins = p.split(/\s+/).filter(Boolean).map(w=> w[0]?.toUpperCase()||'').join('');
+    return ins;
+  });
+  return tags.join(' & ');
+}
+function topikTwoWords(s){ return String(s||'').trim().split(/\s+/).slice(0,2).join(' '); }
+function dateKey(iso){
+  if(!iso) return '';
+  const d = new Date(iso);
+  const y = d.getFullYear(), m = d.getMonth()+1, dd = d.getDate();
+  return `${y}-${String(m).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;
+}
+
+// ====== Helpers untuk kalender Minggu–Sabtu ======
+function buildDateMap(plans, reports){
+  const map = {};
+  plans.forEach(p=>{
+    const k = dateKey(p.waktu); if(!k) return;
+    (map[k] ||= {plan:[], actual:[]}).plan.push(p);
+  });
+  reports.forEach(r=>{
+    const k = dateKey(r.waktu); if(!k) return;
+    (map[k] ||= {plan:[], actual:[]}).actual.push(r);
+  });
+  return map;
+}
+
+// Kembalikan array minggu (baris) berisi 7 kolom (Minggu..Sabtu), sel bisa null
+function buildMonthWeeks(year, month/*0-11*/){
+  const firstDow = new Date(year, month, 1).getDay();   // 0=Minggu
+  const daysIn  = new Date(year, month+1, 0).getDate();
+  const weeks = [];
+  let d = 1;
+  for(let w=0; w<6; w++){                // maksimal 6 minggu
+    const row = [];
+    for(let dow=0; dow<7; dow++){
+      if (w===0 && dow<firstDow) row.push(null);
+      else if (d > daysIn) row.push(null);
+      else {
+        const key = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+        row.push({ d, key }); d++;
+      }
+    }
+    weeks.push(row);
+    if (d > daysIn) break;
+  }
+  return weeks;
+}
+
+
+async function fetchSheetJS(sheetName){
+  // JSONP via <script> untuk hindari CORS; GAS akan tulis window.gkmPayload
+  return new Promise((resolve, reject)=>{
+    const cbId = 'gkmPayload';
+    // bersihkan dulu
+    delete window[cbId];
+    const s = document.createElement('script');
+    const base = SYNC.SCRIPT_URL;
+    s.src = `${base}?action=list&sheetName=${encodeURIComponent(sheetName)}&fmt=js&_=${Date.now()}`;
+    s.onload = ()=>{
+      const data = window[cbId];
+      if(!data || !Array.isArray(data.rows)) { reject(new Error('No data')); return; }
+      resolve(data.rows);
+      setTimeout(()=> s.remove(), 0);
+    };
+    s.onerror = ()=> reject(new Error('Network error'));
+    document.head.appendChild(s);
+  });
+}
+
+async function loadMatrixData(){
+  if(!MX_ADMIN){
+    // mode lokal
+    return { reports: getReports(), plans: getPlans(), source: 'lokal' };
+  }
+  // mode admin → tarik dari server
+  const [plans, reports] = await Promise.all([
+    fetchSheetJS(SYNC.SHEET_PLAN),
+    fetchSheetJS(SYNC.SHEET_NAME)
+  ]);
+  return { reports, plans, source: 'server' };
+}
+
+function renderMatrixGrid(year, monthOrNull, plans, reports){
+  const dateMap = buildDateMap(plans, reports);
+
+  // builder konten per tanggal (badge + warna)
+  function badgesHTML(k){
+    const entry = dateMap[k];
+    if(!entry) return '';
+    const toLine = (obj, typ)=>{
+      const tag   = typ==='plan' ? 'Renc' : 'Aktual';
+      const ini   = initialsFromName(obj.askep);
+      const div   = obj.divisi;
+      const unit  = obj.unit;
+      const reg   = obj.region;
+      const topik = topikTwoWords(obj.topik);
+      return `${tag}: ${ini}; ${div}; ${unit}; ${reg}; ${topik}`;
+    };
+    if(entry.plan.length && entry.actual.length){
+      const r1 = entry.plan.map(p=> toLine(p,'plan')).join('\n');
+      const r2 = entry.actual.map(a=> toLine(a,'actual')).join('\n');
+      return `<span class="mx-badge mx-both" data-date="${k}">${escapeHtml(r1)}</span>
+              <div class="mx-sep">====</div>
+              <span class="mx-badge mx-both" data-date="${k}">${escapeHtml(r2)}</span>`;
+    }
+    const out = [];
+    entry.plan.forEach(p=> out.push(`<span class="mx-badge mx-rencana" data-date="${k}">${escapeHtml(toLine(p,'plan'))}</span>`));
+    entry.actual.forEach(a=> out.push(`<span class="mx-badge mx-aktual" data-date="${k}">${escapeHtml(toLine(a,'actual'))}</span>`));
+    return out.join('');
+  }
+
+  const months = (monthOrNull==null) ? [...Array(12).keys()] : [monthOrNull];
+  let html = '';
+
+  months.forEach(m=>{
+    const weeks = buildMonthWeeks(year, m);
+    const monthName = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'][m];
+
+    html += `<div class="mx-month">
+      <h6 class="mb-2">${monthName} ${year}</h6>
+      <div class="table-responsive nowrap-scroll">
+        <table class="table table-sm mx-cal">
+          <thead>
+            <tr>${dayNames.map(n=>`<th>${n}</th>`).join('')}</tr>
+          </thead>
+          <tbody>
+            ${weeks.map(week=>{
+              return `<tr>` + week.map(cell=>{
+                if(!cell) return `<td class="mx-cell mx-empty"></td>`;
+                const k = cell.key;
+                return `<td class="mx-cell">
+                  <div class="mx-daynum">${cell.d}</div>
+                  ${badgesHTML(k)}
+                </td>`;
+              }).join('') + `</tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+  });
+
+  DOM.mxWrap.innerHTML = html;
+
+  // klik detail
+  DOM.mxWrap.querySelectorAll('.mx-badge').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const k = el.getAttribute('data-date');
+      const entry = dateMap[k]; if(!entry) return;
+      const lines = [];
+      entry.plan.forEach(p=> lines.push(`Renc: ${p.askep}; ${p.divisi}; ${p.unit}; ${p.region}; ${p.topik}`));
+      if(entry.plan.length && entry.actual.length) lines.push('====');
+      entry.actual.forEach(a=> lines.push(`Aktual: ${a.askep}; ${a.divisi}; ${a.unit}; ${a.region}; ${a.topik}`));
+      alert(`${k}\n\n${lines.join('\n')}`);
+    });
+  });
+}
+
+
+async function refreshMatrix(){
+  const mode = DOM.mxMode.value;
+  const year = Number(DOM.mxYear.value||new Date().getFullYear());
+  const month = mode==='month' ? Number(DOM.mxMonth.value||new Date().getMonth()) : null;
+
+  DOM.mxInfo.textContent = MX_ADMIN ? 'Mode admin (server: Google Sheet).' : 'Mode lokal.';
+  try{
+    const data = await loadMatrixData();
+    renderMatrixGrid(year, month, data.plans||[], data.reports||[]);
+  }catch(e){
+    console.error(e);
+    showAlert('Gagal memuat data matrik.', 'danger');
+  }
+}
+
+// Init nilai tahun/bulan
+(function(){
+  const now = new Date();
+  DOM.mxYear.value = now.getFullYear();
+  DOM.mxMonth.value = now.getMonth();
+})();
+
+DOM.mxMode.addEventListener('change', ()=>{
+  const m = DOM.mxMode.value;
+  DOM.mxMonth.classList.toggle('d-none', m!=='month');
+  refreshMatrix();
+});
+DOM.mxYear.addEventListener('input', refreshMatrix);
+DOM.mxMonth.addEventListener('change', refreshMatrix);
+DOM.btnMxRefresh.addEventListener('click', refreshMatrix);
+
+// Export XLSX untuk Matrik (snapshot tabel)
+DOM.btnMxXlsx.addEventListener('click', async ()=>{
+  // ambil data sesuai mode saat ini, lalu bangun AoA dari kalender (bukan dari DOM)
+  const mode  = DOM.mxMode.value;
+  const year  = Number(DOM.mxYear.value||new Date().getFullYear());
+  const mSel  = mode==='month' ? Number(DOM.mxMonth.value||new Date().getMonth()) : null;
+
+  let data;
+  try { data = await loadMatrixData(); }
+  catch { return showAlert('Gagal memuat data.', 'danger'); }
+
+  const dateMap = buildDateMap(data.plans||[], data.reports||[]);
+  const wb = XLSX.utils.book_new();
+  const months = (mSel==null) ? [...Array(12).keys()] : [mSel];
+
+  months.forEach(m=>{
+    const weeks = buildMonthWeeks(year, m);
+    const aoa = [];
+    aoa.push(dayNames); // header Minggu–Sabtu
+
+    weeks.forEach(week=>{
+      aoa.push(week.map(cell=>{
+        if(!cell) return '';
+        const k = cell.key;
+        const entry = dateMap[k];
+        if(!entry) return String(cell.d);
+        const lines = [];
+        if(entry.plan.length){
+          lines.push('Renc: ' + entry.plan.map(p=> `${initialsFromName(p.askep)}; ${p.divisi}; ${p.unit}; ${p.region}; ${topikTwoWords(p.topik)}`).join(' / '));
+        }
+        if(entry.plan.length && entry.actual.length) lines.push('====');
+        if(entry.actual.length){
+          lines.push('Aktual: ' + entry.actual.map(a=> `${initialsFromName(a.askep)}; ${a.divisi}; ${a.unit}; ${a.region}; ${topikTwoWords(a.topik)}`).join(' / '));
+        }
+        return `${cell.d}\n${lines.join('\n')}`;
+      }));
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const name = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'][m];
+    XLSX.utils.book_append_sheet(wb, ws, `${name}-${year}`);
+  });
+
+  XLSX.writeFile(wb, `MatrikGKM_${year}${mSel==null?'_12bln':('_'+String(mSel+1).padStart(2,'0'))}.xlsx`);
+});
+
+
+// Export PDF (render html → canvas teks sederhana)
+DOM.btnMxPdf.addEventListener('click', async ()=>{
+  const { jsPDF } = window.jspdf;
+  const mode  = DOM.mxMode.value;
+  const year  = Number(DOM.mxYear.value||new Date().getFullYear());
+  const mSel  = mode==='month' ? Number(DOM.mxMonth.value||new Date().getMonth()) : null;
+
+  let data;
+  try { data = await loadMatrixData(); }
+  catch { return showAlert('Gagal memuat data.', 'danger'); }
+
+  const dateMap = buildDateMap(data.plans||[], data.reports||[]);
+  const months = (mSel==null) ? [...Array(12).keys()] : [mSel];
+
+  const doc = new jsPDF({orientation:'l', unit:'pt', format:'a4'});
+  const pageW = doc.internal.pageSize.getWidth();
+  const left = 28; let y = 32;
+
+  months.forEach((m, idx)=>{
+    const title = `${['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'][m]} ${year}`;
+    doc.setFontSize(13); doc.text(title, left, y); y += 14;
+
+    // header hari
+    doc.setFontSize(10);
+    doc.text(dayNames.join('   |   '), left, y); y += 10;
+    doc.setLineWidth(0.3); doc.line(left, y, pageW-28, y); y += 6;
+
+    const weeks = buildMonthWeeks(year, m);
+    doc.setFontSize(8);
+
+    weeks.forEach(week=>{
+      // bikin 7 kolom, tiap kolom berupa ringkasan (DD + teks pendek)
+      const cols = week.map(cell=>{
+        if(!cell) return ' ';
+        const k = cell.key;
+        const entry = dateMap[k];
+        if(!entry) return String(cell.d);
+        const lines = [];
+        if(entry.plan.length){
+          lines.push('R: ' + entry.plan.map(p=> `${initialsFromName(p.askep)}; ${p.divisi}; ${topikTwoWords(p.topik)}`).join('/'));
+        }
+        if(entry.plan.length && entry.actual.length) lines.push('====');
+        if(entry.actual.length){
+          lines.push('A: ' + entry.actual.map(a=> `${initialsFromName(a.askep)}; ${a.divisi}; ${topikTwoWords(a.topik)}`).join('/'));
+        }
+        return `${cell.d} ${lines.join(' ')}`;
+      });
+
+      // tulis baris, wrap kasar
+      const text = cols.join('   |   ');
+      const wrapped = doc.splitTextToSize(text, pageW-56);
+      wrapped.forEach(line=>{
+        if (y > 560){ doc.addPage(); y = 32; }
+        doc.text(line, left, y);
+        y += 12;
+      });
+      y += 4;
+    });
+
+    if (idx < months.length-1){
+      doc.addPage(); y = 32;
+    }
+  });
+
+  doc.save(`MatrikGKM_${year}${mSel==null?'_12bln':('_'+String(mSel+1).padStart(2,'0'))}.pdf`);
+});
+
+
+function setAdminUI(){
+  // Ubah tampilan tombol & info mode
+  if (MX_ADMIN){
+    DOM.btnMxAdmin.classList.remove('btn-outline-secondary');
+    DOM.btnMxAdmin.classList.add('btn-danger');
+    DOM.btnMxAdmin.innerHTML = '<i class="bi bi-box-arrow-right"></i> Keluar Admin';
+    DOM.mxInfo.textContent = 'Mode admin (server: Google Sheet).';
+  } else {
+    DOM.btnMxAdmin.classList.remove('btn-danger');
+    DOM.btnMxAdmin.classList.add('btn-outline-secondary');
+    DOM.btnMxAdmin.innerHTML = '<i class="bi bi-gear"></i>';
+    DOM.mxInfo.textContent = 'Mode lokal.';
+  }
+}
+
+// Admin gate
+DOM.btnMxAdmin.addEventListener('click', ()=>{
+  if (!MX_ADMIN){
+    const pass = prompt('Masukkan password admin:');
+    if (pass === 'admin123'){
+      MX_ADMIN = true;
+      setAdminUI();
+      showAlert('Mode Admin aktif. Data matrik ditarik langsung dari Google Sheet.', 'success');
+      refreshMatrix();
+    } else if (pass != null){
+      showAlert('Password salah.', 'warning');
+    }
+  } else {
+    // Sedang mode admin → tawarkan keluar
+    if (confirm('Keluar dari Mode Admin dan kembali ke mode lokal?')){
+      MX_ADMIN = false;
+      setAdminUI();
+      showAlert('Mode Admin dimatikan. Kembali ke mode lokal.', 'info');
+      refreshMatrix();
+    }
+  }
+});
+
+
 
 // =============== Mandor Index ===============
 function comboKey(unit, divisi) { return `${(unit||'').trim().toUpperCase()}|${(divisi||'').trim().toUpperCase()}`; }
@@ -582,40 +1050,42 @@ async function syncBatch(ids, scriptUrl, sheetName) {
   await fetch(scriptUrl, { method: 'POST', mode: 'no-cors', body: fd });
   return true;
 }
-async function syncNow() {
+async function syncNow(){
   const scriptUrl = (SYNC.SCRIPT_URL || '').trim();
-  const sheetName = (SYNC.SHEET_NAME || 'LaporanGKM').trim();
+  if (!scriptUrl) { showAlert('SCRIPT_URL belum diatur di app.js.', 'warning'); return; }
 
-  if (!scriptUrl) {
-    showAlert('SCRIPT_URL belum diatur di app.js.', 'warning');
-    return;
-  }
-  const queue = getQueue();
-  if (!queue.length) {
-    showAlert('Tidak ada data di antrean.', 'info');
-    return;
-  }
+  const qReports = getQueue();
+  const qPlans   = getPlanQueue();
+  if (!qReports.length && !qPlans.length) { showAlert('Tidak ada data di antrean.', 'info'); return; }
 
   toggleSpinner(DOM.btnSyncNow, DOM.spinSync, true);
   DOM.syncStatus.textContent = 'Mengirim...';
 
   const BATCH = 50;
-  let cursor = 0;
-  const sentIds = [];
+  let sentRep = [], sentPlan = [];
   try {
-    while (cursor < queue.length) {
-      const chunk = queue.slice(cursor, cursor + BATCH);
-      await syncBatch(chunk, scriptUrl, sheetName);
-      sentIds.push(...chunk);
-      cursor += BATCH;
+    // 1) Laporan -> LaporanGKM
+    for(let i=0; i<qReports.length; i+=BATCH){
+      const chunk = qReports.slice(i, i+BATCH);
+      await syncBatch(chunk, scriptUrl, SYNC.SHEET_NAME);
+      sentRep.push(...chunk);
     }
-    dequeueMany(sentIds);
+    dequeueMany(sentRep);
+
+    // 2) Rencana -> RencanaGKM
+    for(let i=0; i<qPlans.length; i+=BATCH){
+      const chunk = qPlans.slice(i, i+BATCH);
+      await syncPlansBatch(chunk, scriptUrl, SYNC.SHEET_PLAN);
+      sentPlan.push(...chunk);
+    }
+    dequeuePlansMany(sentPlan);
+
     const ts = new Date().toISOString();
     writeJSON(KEYS.lastSync, ts);
-    DOM.lastSyncLabel.textContent = new Date(ts).toLocaleString('id-ID', { hour12:false });
-    DOM.syncStatus.textContent = `Sukses kirim ${sentIds.length} item.`;
-    showAlert(`Sync selesai: ${sentIds.length} item terkirim.`, 'success');
-  } catch (err) {
+    DOM.lastSyncLabel.textContent = new Date(ts).toLocaleString('id-ID', {hour12:false});
+    DOM.syncStatus.textContent = `Sukses: Laporan ${sentRep.length}, Rencana ${sentPlan.length}.`;
+    showAlert(`Sync selesai. Laporan: ${sentRep.length}, Rencana: ${sentPlan.length}.`, 'success');
+  } catch(err){
     console.error(err);
     DOM.syncStatus.textContent = 'Gagal. Periksa jaringan & URL.';
     showAlert('Sync gagal. Cek koneksi/URL lalu coba lagi.', 'danger');
@@ -624,6 +1094,7 @@ async function syncNow() {
     updateQueueCount();
   }
 }
+
 
 DOM.btnSyncNow.addEventListener('click', syncNow);
 
@@ -694,6 +1165,12 @@ function prefillDefaults() {
   if (p.unit)   DOM.unit.value   = p.unit;
   if (p.region) DOM.region.value = p.region;
 
+  // Prefill Rencana
+  if (p.askep)  DOM.rencAskep.value  = p.askep;
+  if (p.divisi) DOM.rencDivisi.value = p.divisi;
+  if (p.unit)   DOM.rencUnit.value   = p.unit;
+  if (p.region) DOM.rencRegion.value = p.region;
+
   DOM.prefAskep.value  = p.askep  || '';
   DOM.prefDivisi.value = p.divisi || '';
   DOM.prefUnit.value   = p.unit   || '';
@@ -713,7 +1190,16 @@ function showView(name) {
   if (nav.classList.contains('show')) bsCollapse.hide();
   if (name === 'history') refreshHistory();
   if (name === 'stats') refreshStatsAutosuggest();
-  if (name === 'sync') { updateQueueCount(); const ts = readJSON(KEYS.lastSync, null); DOM.lastSyncLabel.textContent = ts ? new Date(ts).toLocaleString('id-ID',{hour12:false}) : '-'; }
+  if (name === 'sync') { updateQueueCount(); const ts = readJSON(KEYS.lastSync, null); DOM.lastSyncLabel.textContent = ts ? new Date(ts).toLocaleString('id-ID',{hour12:false}) : '-'; };
+    if (name === 'matrix') setAdminUI(); refreshMatrix();
+  if (name === 'plan') { // prefill field rencana
+    const p = getPrefs();
+    if (!DOM.rencTanggal.value) DOM.rencTanggal.value = ''; // rencana tidak auto isi tanggal
+    if (p.askep && !DOM.rencAskep.value) DOM.rencAskep.value = p.askep;
+    if (p.divisi && !DOM.rencDivisi.value) DOM.rencDivisi.value = p.divisi;
+    if (p.unit && !DOM.rencUnit.value) DOM.rencUnit.value = p.unit;
+    if (p.region && !DOM.rencRegion.value) DOM.rencRegion.value = p.region;
+  }
 }
 DOM.navLinks.forEach(a=> a.addEventListener('click', (e)=> { e.preventDefault(); showView(a.dataset.nav); }));
 
