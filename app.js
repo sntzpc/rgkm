@@ -238,29 +238,37 @@ function validatePlan(p){
 }
 
 // ====== Event: Rencana ======
-DOM.formRencana.addEventListener('submit', (e)=>{
+// ====== Event: Rencana (REPLACE) ======
+DOM.formRencana.addEventListener('submit', async (e)=>{
   e.preventDefault();
   const plan = buildPlanFromForm();
   if(!validatePlan(plan)) return showAlert('Lengkapi field bertanda * pada Rencana.', 'warning');
 
-  // Ingat default (pakai prefs yang sama)
+  // Ingat default
   const prefs = getPrefs();
   prefs.askep = plan.askep; prefs.divisi = plan.divisi; prefs.unit = plan.unit; prefs.region = plan.region;
   setPrefs(prefs);
 
-  // Simpan
+  // Simpan lokal + antrekan sync
   const arr = getPlans();
   arr.unshift(plan); setPlans(arr); enqueuePlan(plan.id);
 
+  // === PUSH ke Kalender (ICS/Share/GCal) segera, masih dalam gesture klik ===
+  // Tidak "await" pun boleh; namun await membuat alur lebih eksplisit
+  try { await autoPushPlanToCalendar(plan); } catch(_) {}
+
+  // UI feedback
   toggleSpinner(DOM.btnSimpanRencana, DOM.spinSaveRencana, true);
   setTimeout(()=>{
     toggleSpinner(DOM.btnSimpanRencana, DOM.spinSaveRencana, false);
-    showAlert('Rencana disimpan & masuk antrean sync.', 'success');
-    // Kosongkan Hari & Topik saja; lainnya tetap
-    DOM.rencTanggal.value = ''; DOM.rencTopik.value = '';
+    showAlert('Rencana disimpan, antrean sync dibuat, dan kalender dibuka untuk penjadwalan 04:00.', 'success');
+    // Kosongkan hanya tanggal & topik
+    DOM.rencTanggal.value = '';
+    DOM.rencTopik.value = '';
     storageSizeLabel();
   }, 250);
 });
+
 
 DOM.btnClearRencana.addEventListener('click', ()=>{
   DOM.rencTanggal.value = ''; DOM.rencTopik.value = '';
@@ -1202,6 +1210,70 @@ function showView(name) {
   }
 }
 DOM.navLinks.forEach(a=> a.addEventListener('click', (e)=> { e.preventDefault(); showView(a.dataset.nav); }));
+
+// ===== Build ICS VCALENDAR string dari 1 atau banyak VEVENT =====
+function buildICSString(events){
+  return [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//GKM Reporter//ID',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    events.join('\r\n'),
+    'END:VCALENDAR'
+  ].join('\r\n');
+}
+
+// Pre-fill Google Calendar (butuh konfirmasi user)
+function buildGCalUrlForPlan(p){
+  const dt = new Date(p.waktu);
+  const { y, m, d } = ymdLocal(dt); // sudah ada di patch sebelumnya
+  const start = `${y}${m}${d}T040000`;
+  const end   = `${y}${m}${d}T041500`;
+  const text  = `Rencana GKM: ${topikTwoWords(p.topik)} (${p.unit}/${p.divisi}/${p.region})`;
+  const details = [
+    `Askep: ${p.askep}`,
+    `Divisi: ${p.divisi}`,
+    `Unit: ${p.unit}`,
+    `Region: ${p.region}`,
+    `Topik: ${p.topik}`
+  ].join('\n');
+  const loc = p.region || '';
+  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(text)}&dates=${start}/${end}&details=${encodeURIComponent(details)}&location=${encodeURIComponent(loc)}&ctz=Asia/Jakarta`;
+}
+
+// Coba share ICS ke app Kalender; fallback: buka ICS; fallback lagi: buka GCal template
+async function autoPushPlanToCalendar(plan){
+  try{
+    const icsStr = buildICSString([icsEventForPlan(plan)]);    // pakai VEVENT 04:00 dengan VALARM
+    const blob   = new Blob([icsStr], { type:'text/calendar;charset=utf-8' });
+    const fname  = `RencanaGKM_${(plan.waktu||'').slice(0,10)}_04-00.ics`;
+
+    // 1) Web Share dengan file (Android modern / PWA)
+    if (navigator.canShare){
+      const file = new File([blob], fname, { type:'text/calendar' });
+      if (navigator.canShare({ files:[file] })){
+        await navigator.share({ files:[file], title:'Rencana GKM (04:00)', text:'Tambah ke kalender' });
+        return;
+      }
+    }
+
+    // 2) Buka ICS (banyak HP akan prompt "Add to Calendar")
+    const url = URL.createObjectURL(blob);
+    // window.open di-**trigger** dari handler klik => aman dari popup blocker
+    window.open(url, '_blank');
+    setTimeout(()=> URL.revokeObjectURL(url), 2000);
+
+    // 3) Fallback tambahan: buka Google Calendar TEMPLATE (jika ICS hanya terunduh)
+    const gcal = buildGCalUrlForPlan(plan);
+    setTimeout(()=> window.open(gcal, '_blank'), 500);
+  }catch(e){
+    // Jika semua gagal, minimal buka Google Calendar
+    const gcal = buildGCalUrlForPlan(plan);
+    window.open(gcal, '_blank');
+  }
+}
+
 
 function init() {
   prefillDefaults();
