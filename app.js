@@ -703,6 +703,35 @@ function initTags(wrapperEl, inputEl) {
 const penanyaTags = initTags(DOM.penanyaWrap, DOM.penanyaInput);
 const perangkumTags = initTags(DOM.perangkumWrap, DOM.perangkumInput);
 
+// ===== Mandor input: commit pending text (mobile-safe) =====
+function commitInputToTags(ctrl, inputEl){
+  const raw = (inputEl.value || '').trim();
+  if(!raw) return;
+  const parts = raw.split(/[,\n;]/).map(s=> s.trim()).filter(Boolean);
+  if(parts.length) ctrl.addMany(parts);  // addMany sudah dedup
+  inputEl.value = '';
+}
+
+// Commit keduanya sekaligus (dipakai sebelum submit/preview)
+function commitMandorPending(){
+  commitInputToTags(penanyaTags, DOM.penanyaInput);
+  commitInputToTags(perangkumTags, DOM.perangkumInput);
+}
+
+// Auto-commit saat user pilih dari datalist (change), pindah fokus (blur),
+// dan ketika mengetik koma (beberapa keyboard mobile tidak memicu keydown ',')
+['change','blur'].forEach(evt=>{
+  DOM.penanyaInput.addEventListener(evt, ()=> commitInputToTags(penanyaTags, DOM.penanyaInput));
+  DOM.perangkumInput.addEventListener(evt, ()=> commitInputToTags(perangkumTags, DOM.perangkumInput));
+});
+DOM.penanyaInput.addEventListener('input', ()=>{
+  if (DOM.penanyaInput.value.includes(',')) commitInputToTags(penanyaTags, DOM.penanyaInput);
+});
+DOM.perangkumInput.addEventListener('input', ()=>{
+  if (DOM.perangkumInput.value.includes(',')) commitInputToTags(perangkumTags, DOM.perangkumInput);
+});
+
+
 // =============== Auto Suggest Topik ===============
 function buildTopikFrequency() {
   const freq = {};
@@ -900,6 +929,8 @@ function loadReportToForm(r) {
   DOM.topik.value   = r.topik || '';
   penanyaTags.set(r.penanya || []);
   perangkumTags.set(r.perangkum || []);
+  DOM.penanyaInput.value = '';
+  DOM.perangkumInput.value = '';
   DOM.catatan.value = r.catatan || '';
 
   refreshMandorDatalists();
@@ -915,6 +946,7 @@ function validateReport(data) {
 
 // =============== Form events ===============
 DOM.btnRegenWA.addEventListener('click', ()=>{
+  commitMandorPending();
   const data = buildReportFromForm();
   if (!validateReport(data)) return;
   const override = DOM.waTanggal.value ? new Date(DOM.waTanggal.value).toISOString() : null;
@@ -927,6 +959,7 @@ DOM.btnCopyWA.addEventListener('click', async ()=>{
 
 DOM.form.addEventListener('submit', (e)=>{
   e.preventDefault();
+  commitMandorPending();
   const data = buildReportFromForm();
   if (!validateReport(data)) return showAlert('Lengkapi field bertanda * terlebih dahulu.', 'warning');
   toggleSpinner(DOM.btnSimpan, DOM.spinSave, true);
