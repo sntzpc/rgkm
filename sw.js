@@ -1,5 +1,5 @@
 // sw.js — GKM PWA cache + notif
-const CACHE = 'gkm-v3';
+const CACHE = 'gkm-v4';
 
 // Precache aset inti (boleh tambah sesuai kebutuhan)
 const PRECACHE_URLS = [
